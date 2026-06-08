@@ -21,6 +21,9 @@
 #include <zephyr/sys/util.h>
 
 #define ADC_CONTEXT_USES_KERNEL_TIMER 1
+#define ADC_CONTEXT_WAIT_FOR_COMPLETION_TIMEOUT                                                    \
+	K_MSEC(100)
+#include "adc_context.h"
 #include "adc_context.h"
 
 #define DT_DRV_COMPAT ti_ads1220
