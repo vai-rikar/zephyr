@@ -2,21 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig ADC_ADS1220
-	bool "Texas Instruments ADS1220 ADC driver"
+	bool "Texas Instruments ADS1220/ADS1120 ADC driver"
 	default y
-	depends on DT_HAS_TI_ADS1220_ENABLED
+	depends on DT_HAS_TI_ADS1220_ENABLED || DT_HAS_TI_ADS1120_ENABLED
 	select SPI
 	select ADC_CONFIGURABLE_INPUTS
 	help
 	  Enable the driver for Texas Instruments ADS1220 24-bit, 4-channel,
 	  low-power Delta-Sigma ADC with integrated PGA, VREF, SPI interface,
-	  and two IDACs.
+	  and two IDACs. Also covers the ADS1120, which is register/command
+	  compatible but only 16-bit.
 
 	  The ADS1220 is a precision ADC designed for high-resolution measurements
 	  in sensor applications such as temperature, pressure, and strain sensing.
 
 	  Features supported by this driver:
-	  - 24-bit resolution with up to 2000 samples per second
+	  - 24-bit (ADS1220) or 16-bit (ADS1120) resolution with up to 2000 samples per second
 	  - 4 multiplexed input channels (single-ended and differential)
 	  - Programmable gain amplifier (1 to 128)
 	  - Internal 2.048V reference or external reference
