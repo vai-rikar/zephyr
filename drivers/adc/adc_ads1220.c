@@ -26,8 +26,6 @@
 #include "adc_context.h"
 #include "adc_context.h"
 
-#define DT_DRV_COMPAT ti_ads1220
-
 LOG_MODULE_REGISTER(ADS1220, CONFIG_ADC_LOG_LEVEL);
 
 #define ADS1220_CONFIG_VREF(x)  		(FIELD_PREP(BIT_MASK(2) << 6, x))
@@ -42,7 +40,9 @@ LOG_MODULE_REGISTER(ADS1220, CONFIG_ADC_LOG_LEVEL);
 
 #define ADS1220_REG_SHIFT 2
 
+/* ADS1220 is a 24-bit ADC, ADS1120 is register/command compatible but only 16-bit */
 #define ADS1220_RESOLUTION   24
+#define ADS1120_RESOLUTION   16
 #define ADS1220_REF_INTERNAL 2048
 
 // wait at least 50us + 32 * tCLK (256kHz)
@@ -192,6 +192,7 @@ struct ads1220_config {
 	const struct spi_dt_spec spi;
 	const struct gpio_dt_spec gpio_drdy;
 	int idac_current;
+	uint8_t resolution;
 #if CONFIG_ADC_ASYNC
 	k_thread_stack_t *stack;
 #endif
@@ -295,21 +296,27 @@ static int ads1220_wait_data_ready(const struct device *dev)
 static int ads1220_read_sample(const struct device *dev, int32_t *buff)
 {
 	int res;
-	uint8_t rx_bytes[3];
+	uint8_t rx_bytes[3] = {0};
 	const struct ads1220_config *cfg = dev->config;
+	/* ADS1220 outputs 3 bytes (24-bit) per conversion, ADS1120 only 2 bytes (16-bit) */
+	size_t sample_bytes = cfg->resolution == ADS1220_RESOLUTION ? 3 : 2;
 	struct spi_buf rx_buf = {
 		.buf = &rx_bytes[0],
-		.len = sizeof(rx_bytes),
+		.len = sample_bytes,
 	};
 	const struct spi_buf_set rx = {.buffers = &rx_buf, .count = 1};
 
 	res = spi_read_dt(&cfg->spi, &rx);
 
 	if (res == 0) {
-		*buff = sys_get_be24(&rx_bytes[0]);
+		if (sample_bytes == 3) {
+			*buff = sys_get_be24(&rx_bytes[0]);
 
-		if (*buff & 0x800000) {
-			*buff |= 0xFF000000;
+			if (*buff & 0x800000) {
+				*buff |= 0xFF000000;
+			}
+		} else {
+			*buff = (int16_t)sys_get_be16(&rx_bytes[0]);
 		}
 	}
 
@@ -517,8 +524,9 @@ static int ads1220_validate_buffer_size(const struct adc_sequence *sequence)
 
 static int ads1220_validate_sequence(const struct device *dev, const struct adc_sequence *sequence)
 {
+	const struct ads1220_config *cfg = dev->config;
 	const struct ads1220_data *data = dev->data;
-	const uint8_t resolution = data->differential ? ADS1220_RESOLUTION : ADS1220_RESOLUTION - 1;
+	const uint8_t resolution = data->differential ? cfg->resolution : cfg->resolution - 1;
 
 	if (sequence->resolution != resolution) {
 		return -EINVAL;
@@ -796,22 +804,29 @@ static DEVICE_API(adc, api) = {
 
 #define ADC_ADS1220_SPI_CFG SPI_OP_MODE_MASTER | SPI_MODE_CPHA | SPI_WORD_SET(8) | SPI_TRANSFER_MSB
 
-#define ADC_ADS1220_INST_DEFINE(n)                                                                 \
+#define ADC_ADS1220_INST_DEFINE(n, t, res)                                                          \
 	PM_DEVICE_DT_INST_DEFINE(n, ads1220_pm_action);                                            \
 	IF_ENABLED(										   \
 		CONFIG_ADC_ASYNC,								   \
 		(static K_KERNEL_STACK_DEFINE(							   \
-			 thread_stack_##n,							   \
+			 thread_stack_##t##_##n,						   \
 			 CONFIG_ADC_ADS1220_ACQUISITION_THREAD_STACK_SIZE);)			   \
 	)                                                                  \
-	static const struct ads1220_config config_##n = {                                          \
+	static const struct ads1220_config config_##t##_##n = {                                    \
 		.spi = SPI_DT_SPEC_INST_GET(n, ADC_ADS1220_SPI_CFG),                               \
 		.gpio_drdy = GPIO_DT_SPEC_INST_GET(n, drdy_gpios),				   \
 		.idac_current = DT_INST_PROP(n, idac_current),					   \
+		.resolution = res,								   \
 		IF_ENABLED(CONFIG_ADC_ASYNC,							   \
-			(.stack = thread_stack_##n)) };                          \
-	static struct ads1220_data data_##n;                                                       \
-	DEVICE_DT_INST_DEFINE(n, ads1220_init, PM_DEVICE_DT_INST_GET(n), &data_##n, &config_##n,   \
-			      POST_KERNEL, CONFIG_ADC_INIT_PRIORITY, &api);
+			(.stack = thread_stack_##t##_##n)) };                    \
+	static struct ads1220_data data_##t##_##n;                                                 \
+	DEVICE_DT_INST_DEFINE(n, ads1220_init, PM_DEVICE_DT_INST_GET(n), &data_##t##_##n,          \
+			      &config_##t##_##n, POST_KERNEL, CONFIG_ADC_INIT_PRIORITY, &api);
 
-DT_INST_FOREACH_STATUS_OKAY(ADC_ADS1220_INST_DEFINE);
+#define DT_DRV_COMPAT ti_ads1220
+DT_INST_FOREACH_STATUS_OKAY_VARGS(ADC_ADS1220_INST_DEFINE, ads1220, ADS1220_RESOLUTION);
+#undef DT_DRV_COMPAT
+
+#define DT_DRV_COMPAT ti_ads1120
+DT_INST_FOREACH_STATUS_OKAY_VARGS(ADC_ADS1220_INST_DEFINE, ads1120, ADS1120_RESOLUTION);
+#undef DT_DRV_COMPAT

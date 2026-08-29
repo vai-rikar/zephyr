@@ -3,15 +3,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config ADC_ADS1220
-	bool "Texas instruments ADS1220 SPI"
+	bool "Texas instruments ADS1220/ADS1120 SPI"
 	default y
-	depends on DT_HAS_TI_ADS1220_ENABLED
+	depends on DT_HAS_TI_ADS1220_ENABLED || DT_HAS_TI_ADS1120_ENABLED
 	select SPI
 	select ADC_CONFIGURABLE_INPUTS
 	select ADC_CONFIGURABLE_EXCITATION_CURRENT_SOURCE_PIN
 	select GPIO
 	help
-	  Enable the driver implementation for the ADS1220
+	  Enable the driver implementation for the ADS1220 (24-bit) and ADS1120 (16-bit)
 
 if ADC_ADS1220
 
