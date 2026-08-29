@@ -28,6 +28,8 @@ extern "C" {
 
 /** ADC resolution in bits */
 #define ADS1220_RESOLUTION 24u
+/** ADS1120 ADC resolution in bits (register/command compatible with ADS1220) */
+#define ADS1120_RESOLUTION 16u
 /** Number of input channels */
 #define ADS1220_CHANNELS   4u
 /** Device ID register value */

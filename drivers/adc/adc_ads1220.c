@@ -23,10 +23,11 @@
 
 #include "adc_context.h"
 
-/* Device tree compatibility string */
-#define DT_DRV_COMPAT ti_ads1220
-
 LOG_MODULE_REGISTER(ads1220, CONFIG_ADC_LOG_LEVEL);
+
+/* ADS1120 is register/command compatible with the ADS1220, only 16-bit instead of 24-bit */
+#define ADS1220_HAS_24_BIT_DEV DT_HAS_COMPAT_STATUS_OKAY(ti_ads1220)
+#define ADS1220_HAS_16_BIT_DEV DT_HAS_COMPAT_STATUS_OKAY(ti_ads1120)
 
 #define IDAC1_ROUTING_INST(n) (DT_INST_PROP_OR(n, idac1_routing, 0))
 #define IDAC2_ROUTING_INST(n) (DT_INST_PROP_OR(n, idac2_routing, 0))
@@ -83,6 +84,8 @@ struct ads1220_config {
 	/** Oscillator frequency in Hz (internal: 4.096 MHz, external: 0.5-4.5 MHz) */
 	uint32_t oscillator_frequency_hz;
 
+	/** ADC resolution in bits (24 for ADS1220, 16 for ADS1120) */
+	uint8_t resolution;
 };
 
 struct ads1220_data {
@@ -119,7 +122,8 @@ static const struct ads1220_idac_info ads1220_idacs[] = {
 	{ADS1220_REG2_IDAC_1000UA, 1000}, {ADS1220_REG2_IDAC_1500UA, 1500},
 };
 
-static int ads1220_read_sample(const struct device *dev, int32_t *buffer)
+#if ADS1220_HAS_24_BIT_DEV
+static int ads1220_read_sample_24(const struct device *dev, int32_t *buffer)
 {
 	const struct ads1220_config *config = dev->config;
 	uint8_t buffer_tx[4];
@@ -164,6 +168,66 @@ static int ads1220_read_sample(const struct device *dev, int32_t *buffer)
 	LOG_DBG("%s: Read data: 0x%06X (%d)", dev->name, raw_data & 0xFFFFFF, raw_data);
 
 	return 0;
+}
+#endif
+
+#if ADS1220_HAS_16_BIT_DEV
+static int ads1220_read_sample_16(const struct device *dev, int32_t *buffer)
+{
+	const struct ads1220_config *config = dev->config;
+	uint8_t buffer_tx[3] = {0};
+	uint8_t buffer_rx[ARRAY_SIZE(buffer_tx)];
+
+	const struct spi_buf tx_buf[] = {{
+		.buf = buffer_tx,
+		.len = ARRAY_SIZE(buffer_tx),
+	}};
+	const struct spi_buf rx_buf[] = {{
+		.buf = buffer_rx,
+		.len = ARRAY_SIZE(buffer_rx),
+	}};
+	const struct spi_buf_set tx = {
+		.buffers = tx_buf,
+		.count = ARRAY_SIZE(tx_buf),
+	};
+	const struct spi_buf_set rx = {
+		.buffers = rx_buf,
+		.count = ARRAY_SIZE(rx_buf),
+	};
+
+	buffer_tx[0] = (uint8_t)ADS1220_CMD_RDATA;
+
+	int result = spi_transceive_dt(&config->bus, &tx, &rx);
+
+	if (result != 0) {
+		LOG_ERR("%s: spi_transceive failed with error %i", dev->name, result);
+		return result;
+	}
+
+	/* Sign extend the 16-bit sample into the (always int32_t) sample buffer */
+	*buffer = (int16_t)sys_get_be16(&buffer_rx[1]);
+	LOG_DBG("%s: Read data: 0x%04X (%d)", dev->name, (uint16_t)*buffer, *buffer);
+
+	return 0;
+}
+#endif
+
+static int ads1220_read_sample(const struct device *dev, int32_t *buffer)
+{
+	const struct ads1220_config *config = dev->config;
+
+#if ADS1220_HAS_24_BIT_DEV
+	if (config->resolution == ADS1220_RESOLUTION) {
+		return ads1220_read_sample_24(dev, buffer);
+	}
+#endif
+#if ADS1220_HAS_16_BIT_DEV
+	if (config->resolution == ADS1120_RESOLUTION) {
+		return ads1220_read_sample_16(dev, buffer);
+	}
+#endif
+	LOG_ERR("%s: unsupported resolution %d", dev->name, config->resolution);
+	return -ENOTSUP;
 }
 
 static int ads1220_send_command(const struct device *dev, uint8_t cmd)
@@ -531,12 +595,14 @@ static void adc_context_start_sampling(struct adc_context *ctx)
 	k_sem_give(&data->acquire_signal);
 }
 
-static int ads1220_validate_sequence(const struct adc_sequence *sequence)
+static int ads1220_validate_sequence(const struct device *dev, const struct adc_sequence *sequence)
 {
+	const struct ads1220_config *config = dev->config;
+
 	/* Validate resolution */
-	if (sequence->resolution != ADS1220_RESOLUTION) {
+	if (sequence->resolution != config->resolution) {
 		LOG_ERR("Invalid resolution %d, must be %d", sequence->resolution,
-			ADS1220_RESOLUTION);
+			config->resolution);
 		return -EINVAL;
 	}
 
@@ -573,7 +639,7 @@ static int ads1220_start_read(const struct device *dev, const struct adc_sequenc
 	int ret;
 
 	/* Validate sequence parameters */
-	ret = ads1220_validate_sequence(sequence);
+	ret = ads1220_validate_sequence(dev, sequence);
 	if (ret < 0) {
 		return ret;
 	}
@@ -780,8 +846,8 @@ static DEVICE_API(adc, ads1220_driver_api) = {
 	   OPERATING_MODE(n)))
 
 /* Device instantiation macro */
-#define ADS1220_INIT(n)                                                                            \
-	static const struct ads1220_config ads1220_config_##n = {                                  \
+#define ADS1220_INIT(n, name, res)                                                                 \
+	static const struct ads1220_config ads1220_config_##name##_##n = {                         \
 		.bus = SPI_DT_SPEC_INST_GET(n,                                                     \
 					    SPI_OP_MODE_MASTER | SPI_MODE_CPHA | SPI_WORD_SET(8)), \
 		.gpio_data_ready = GPIO_DT_SPEC_INST_GET(n, drdy_gpios),                           \
@@ -792,14 +858,34 @@ static DEVICE_API(adc, ads1220_driver_api) = {
 		.pga_bypass = DT_INST_PROP(n, pga_bypass),                                         \
 		.dts_channel_cfg = ADC_CHANNEL_CFG_DT(DT_CHILD(DT_DRV_INST(n), channel_0)),        \
 		.oscillator_frequency_hz = DT_INST_PROP(n, oscillator_frequency),              \
+		.resolution = res,                                                                 \
 	};                                                                                         \
                                                                                                    \
 	BUILD_ASSERT(CHECK_1220_CONFIGURATION(n), "ADS1220 configuration invalid");                \
 	BUILD_ASSERT(DT_INST_PROP(n, continuous_convert) == false,                                 \
 		     "ADS1220 does currently not support continuous conversion");                  \
-	static struct ads1220_data ads1220_data_##n;                                               \
+	static struct ads1220_data ads1220_data_##name##_##n;                                      \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(n, ads1220_init, NULL, &ads1220_data_##n, &ads1220_config_##n,       \
-			      POST_KERNEL, CONFIG_ADC_INIT_PRIORITY, &ads1220_driver_api);
+	DEVICE_DT_INST_DEFINE(n, ads1220_init, NULL, &ads1220_data_##name##_##n,                   \
+			      &ads1220_config_##name##_##n, POST_KERNEL,                          \
+			      CONFIG_ADC_INIT_PRIORITY, &ads1220_driver_api);
 
-DT_INST_FOREACH_STATUS_OKAY(ADS1220_INIT)
+/*
+ * ADS1220: 24-bit, 4 channels
+ */
+#define DT_DRV_COMPAT ti_ads1220
+#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
+#define ADS1220_INST_DEFINE(n) ADS1220_INIT(n, ti_ads1220, ADS1220_RESOLUTION)
+DT_INST_FOREACH_STATUS_OKAY(ADS1220_INST_DEFINE)
+#endif
+
+/*
+ * ADS1120: 16-bit, 4 channels, register/command compatible with ADS1220
+ */
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_ads1120
+#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
+#define ADS1120_INST_DEFINE(n) ADS1220_INIT(n, ti_ads1120, ADS1120_RESOLUTION)
+DT_INST_FOREACH_STATUS_OKAY(ADS1120_INST_DEFINE)
+#endif
+#undef DT_DRV_COMPAT

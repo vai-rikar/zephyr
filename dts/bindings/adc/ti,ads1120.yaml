@@ -1,0 +1,13 @@
+# Copyright (c) 2025 Baumer Group
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Texas Instruments ADS1120 16-bit, 4-channel, low-power Delta-Sigma ADC
+  with integrated PGA, VREF, SPI interface, and two IDACs.
+
+  The ADS1120 is register/command compatible with the ADS1220, differing
+  only in conversion resolution (16-bit instead of 24-bit).
+
+compatible: "ti,ads1120"
+
+include: ti,ads1220-base.yaml
