@@ -130,12 +130,12 @@ extern "C" {
 #define ADS1220_REG2_50_60HZ_MSK  0x30u
 /** 50/60Hz filter: no rejection */
 #define ADS1220_REG2_50_60HZ_NONE (0x0u << 0x04)
-/** 50/60Hz filter: reject 50Hz only */
-#define ADS1220_REG2_50_60HZ_50HZ (0x1u << 0x04)
-/** 50/60Hz filter: reject 60Hz only */
-#define ADS1220_REG2_50_60HZ_60HZ (0x2u << 0x04)
 /** 50/60Hz filter: reject both 50Hz and 60Hz */
-#define ADS1220_REG2_50_60HZ_BOTH (0x3u << 0x04)
+#define ADS1220_REG2_50_60HZ_BOTH (0x1u << 0x04)
+/** 50/60Hz filter: reject 50Hz only */
+#define ADS1220_REG2_50_60HZ_50HZ (0x2u << 0x04)
+/** 50/60Hz filter: reject 60Hz only */
+#define ADS1220_REG2_50_60HZ_60HZ (0x3u << 0x04)
 
 /** Low-side power switch bit in configuration register 2 */
 #define ADS1220_REG2_PSW BIT(3)
