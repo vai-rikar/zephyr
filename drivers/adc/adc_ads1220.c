@@ -89,6 +89,9 @@ struct ads1220_config {
 
 	/** Continuous conversion mode */
 	bool continuous_conversion;
+
+	/** FIR filter configuration */
+	uint8_t filter_configuration;
 };
 
 struct ads1220_data {
@@ -532,6 +535,9 @@ static int ads1220_channel_setup(const struct device *dev,
 		}
 	}
 
+	/* FIR filter configuration */
+	config2 |= (config->filter_configuration << ADS1220_REG2_50_60HZ_POS);
+
 	if (!idac_found) {
 		LOG_ERR("Invalid IDAC magnitude: %d", config->idac_magnitude_ua);
 		return -EINVAL;
@@ -884,6 +890,7 @@ static DEVICE_API(adc, ads1220_driver_api) = {
 		.oscillator_frequency_hz = DT_INST_PROP(n, oscillator_frequency),                  \
 		.resolution = res,                                                                 \
 		.continuous_conversion = DT_INST_PROP(n, continuous_convert),                      \
+		.filter_configuration = DT_INST_PROP(n, filter_configuration),                     \
 	};                                                                                         \
                                                                                                    \
 	BUILD_ASSERT(CHECK_1220_CONFIGURATION(n), "ADS1220 configuration invalid");                \

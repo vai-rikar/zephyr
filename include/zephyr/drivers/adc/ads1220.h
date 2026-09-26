@@ -128,6 +128,8 @@ extern "C" {
 
 /** Mask for 50/60Hz rejection filter in configuration register 2 */
 #define ADS1220_REG2_50_60HZ_MSK  0x30u
+/** Bit position for 50/60Hz rejection filter in configuration register 2 */
+#define ADS1220_REG2_50_60HZ_POS  0x4u
 /** 50/60Hz filter: no rejection */
 #define ADS1220_REG2_50_60HZ_NONE (0x0u << 0x04)
 /** 50/60Hz filter: reject both 50Hz and 60Hz */

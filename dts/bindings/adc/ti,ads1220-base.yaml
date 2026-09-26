@@ -118,3 +118,16 @@ properties:
       to the CLK pin with a frequency between 0.5 MHz and 4.5 MHz.
       This value is used to calculate timing delays (e.g., reset delay).
       Default: 4096000 (4.096 MHz internal oscillator)
+
+  filter-configuration:
+    type: int
+    enum:
+      - 0  # No 50Hz or 60Hz rejection
+      - 1  # Simultaneous 50Hz and 60Hz rejection
+      - 2  # 50Hz rejection only
+      - 3  # 60Hz rejection only
+    default: 0
+    description: |
+      These bits configure the filter coefficients for the internal FIR filter.
+      Only use these bits together with the 20SPS setting in normal mode and the
+      5SPS setting in duty-cycle mode. Set to 0 for all other data rates.
