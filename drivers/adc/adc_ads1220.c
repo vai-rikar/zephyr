@@ -86,6 +86,9 @@ struct ads1220_config {
 
 	/** ADC resolution in bits (24 for ADS1220, 16 for ADS1120) */
 	uint8_t resolution;
+
+	/** Continuous conversion mode */
+	bool continuous_conversion;
 };
 
 struct ads1220_data {
@@ -553,6 +556,22 @@ static int ads1220_channel_setup(const struct device *dev,
 		return ret;
 	}
 
+	if (config->continuous_conversion) {
+		config1 |= ADS1220_REG1_CM;
+
+		ret = ads1220_write_register(dev, ADS1220_REG1, config1);
+		if (ret < 0) {
+			LOG_ERR("Failed to write CONFIG1: %d", ret);
+			return ret;
+		}
+
+		ret = ads1220_send_command(dev, ADS1220_CMD_START_SYNC);
+		if (ret != 0) {
+			LOG_ERR("%s: unable to send START/SYNC command", dev->name);
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -655,16 +674,20 @@ static int ads1220_start_read(const struct device *dev, const struct adc_sequenc
 static int ads1220_adc_perform_read(const struct device *dev)
 {
 	int result;
+	const struct ads1220_config *config = dev->config;
 	struct ads1220_data *data = dev->data;
 
 	k_sem_take(&data->acquire_signal, K_FOREVER);
 	k_sem_take(&data->data_ready_signal, K_NO_WAIT);
 
-	result = ads1220_send_command(dev, ADS1220_CMD_START_SYNC);
-	if (result != 0) {
-		LOG_ERR("%s: unable to send START/SYNC command", dev->name);
-		adc_context_complete(&data->ctx, result);
-		return result;
+	if (!config->continuous_conversion)
+	{
+		result = ads1220_send_command(dev, ADS1220_CMD_START_SYNC);
+		if (result != 0) {
+			LOG_ERR("%s: unable to send START/SYNC command", dev->name);
+			adc_context_complete(&data->ctx, result);
+			return result;
+		}
 	}
 
 	result = ads1220_wait_data_ready(dev);
@@ -860,11 +883,10 @@ static DEVICE_API(adc, ads1220_driver_api) = {
 		.dts_channel_cfg = ADC_CHANNEL_CFG_DT(DT_CHILD(DT_DRV_INST(n), channel_0)),        \
 		.oscillator_frequency_hz = DT_INST_PROP(n, oscillator_frequency),                  \
 		.resolution = res,                                                                 \
+		.continuous_conversion = DT_INST_PROP(n, continuous_convert),                      \
 	};                                                                                         \
                                                                                                    \
 	BUILD_ASSERT(CHECK_1220_CONFIGURATION(n), "ADS1220 configuration invalid");                \
-	BUILD_ASSERT(DT_INST_PROP(n, continuous_convert) == false,                                 \
-		     "ADS1220 does currently not support continuous conversion");                  \
 	static struct ads1220_data ads1220_data_##name##_##n;                                      \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, ads1220_init, NULL, &ads1220_data_##name##_##n,                   \

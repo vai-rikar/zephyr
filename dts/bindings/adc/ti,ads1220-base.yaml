@@ -105,7 +105,6 @@ properties:
   continuous-convert:
     type: boolean
     description: |
-      This feature is currently not implemented!
       In continuous conversion mode, the device continuously performs
       conversions. When a conversion completes, the device places the result
       in the output buffer and immediately begins another conversion.
